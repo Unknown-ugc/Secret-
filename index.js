@@ -172,6 +172,26 @@ app.get("/eggs", (req, res) => {
   });
 });
 
+app.get("/public-eggs", (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 100);
+  res.set("Cache-Control", "no-store");
+  res.json({
+    ok: true,
+    count: eggs.length,
+    eggs: eggs.slice(0, limit).map(e => ({
+      name: e.name,
+      rarity: e.rarity,
+      sizeName: e.sizeName === "Unknown" ? undefined : e.sizeName,
+      scale: e.kg || e.scale,
+      value: e.value,
+      valueNum: e.valueNum,
+      image: e.image,
+      serverId: e.serverId,
+      updatedAt: e.updatedAt
+    }))
+  });
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`CAT HUB API listening on port ${PORT}`);
 });
