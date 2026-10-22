@@ -7,6 +7,20 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());   // ilagay sa itaas ng mga route
+
+app.post("/egg-gone", (req, res) => {
+  const { serverId, name, scale } = req.body || {};
+  if (!serverId || !name) return res.sendStatus(400);
+  const before = eggs.length;
+  eggs = eggs.filter(e =>
+    !(e.serverId === serverId &&
+      e.name.toLowerCase() === String(name).toLowerCase() &&
+      Math.abs((e.scale || e.kg || 0) - Number(scale || 0)) < 0.02)
+  );
+  res.json({ ok: true, removed: before - eggs.length });
+});
+
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const API_KEY = process.env.API_KEY;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
