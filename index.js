@@ -13,22 +13,39 @@ const REPORT_KEY = process.env.REPORT_KEY;   // protects /report-egg (optional)
 
 let eggs = [];
 const MAX_EGGS = 1000;
-const EGG_TTL_MS = 8 * 60 * 1000; // an egg disappears if nobody re-reports it for 8 minutes
 
 const same = (a, b) =>
   a.serverId === b.serverId &&
   a.name.toLowerCase() === b.name.toLowerCase() &&
   Math.abs((a.scale || 0) - (b.scale || 0)) < 0.02;
 
-// ---------- Live egg cleanup (replaces the old 5-minute wipe) ----------
-setInterval(() => {
-  const cutoff = Date.now() - EGG_TTL_MS;
-  const before = eggs.length;
-  eggs = eggs.filter(e => new Date(e.updatedAt).getTime() >= cutoff);
-  if (eggs.length !== before) {
-    console.log(`[CLEANUP] removed ${before - eggs.length} expired eggs, total=${eggs.length}`);
-  }
-}, 30 * 1000);
+// ---------- Reset at every real 5-minute mark (:00, :05, :10 ...) ----------
+// The game changes the eggs in every server each 5 minutes, so old eggs are really gone.
+// Detectors re-scan right after each mark and re-send the new eggs.
+function millisecondsUntilNextFiveMinuteMark() {
+  const FIVE = 5 * 60 * 1000;
+  return FIVE - (Date.now() % FIVE);
+}
+
+function scheduleNextReset() {
+  setTimeout(() => {
+    const removed = eggs.length;
+    eggs = [];
+
+    const time = new Intl.DateTimeFormat("en-PH", {
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(new Date());
+
+    console.log(`[RESET] ${time} Philippine time. Cleared ${removed} eggs.`);
+    scheduleNextReset();
+  }, millisecondsUntilNextFiveMinuteMark());
+}
+
+scheduleNextReset();
 
 // ---------- Loader / detector reports eggs straight here ----------
 const reportHits = new Map();
@@ -77,7 +94,7 @@ app.post("/report-egg", (req, res) => {
 
     const existing = eggs.find(x => same(x, egg));
     if (existing) {
-      // already listed: just keep it alive and update the player count
+      // already listed: just update the time and player count
       existing.updatedAt = stamp;
       existing.players = egg.players;
       existing.maxPlayers = egg.maxPlayers;
@@ -121,7 +138,7 @@ app.get("/", (_req, res) => {
 
 app.get("/health", (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ ok: true, liveEggs: eggs.length, ttlMinutes: EGG_TTL_MS / 60000 });
+  res.json({ ok: true, liveEggs: eggs.length, resetEvery: "5 minutes (wall clock)" });
 });
 
 app.get("/eggs", (req, res) => {
@@ -162,3 +179,5 @@ app.get("/public-eggs", (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`CAT HUB API listening on port ${PORT}`);
 });
+         
+    
