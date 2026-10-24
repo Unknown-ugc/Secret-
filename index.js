@@ -12,7 +12,8 @@ const API_KEY = process.env.API_KEY;         // protects /eggs (full data)
 const REPORT_KEY = process.env.REPORT_KEY;   // protects /report-egg (optional)
 
 let eggs = [];
-const MAX_EGGS = 1000;
+const MAX_EGGS = Infinity; // no limit (the list is wiped every 5 minutes anyway)
+let eggsVersion = 0;       // changes whenever the list changes (used by the response cache)
 
 const same = (a, b) =>
   a.serverId === b.serverId &&
@@ -31,6 +32,7 @@ function scheduleNextReset() {
   setTimeout(() => {
     const removed = eggs.length;
     eggs = [];
+    eggsVersion++;
 
     const time = new Intl.DateTimeFormat("en-PH", {
       timeZone: "Asia/Manila",
@@ -111,9 +113,9 @@ app.post("/report-egg", (req, res) => {
 
   if (added) {
     eggs.sort((a, b) => b.valueNum - a.valueNum);
-    if (eggs.length > MAX_EGGS) eggs = eggs.slice(0, MAX_EGGS);
   }
 
+  if (added || refreshed) eggsVersion++;
   console.log(`[REPORT] added=${added} refreshed=${refreshed} total=${eggs.length}`);
   res.json({ ok: true, received: body.length, added, refreshed });
 });
@@ -126,6 +128,7 @@ app.post("/egg-gone", (req, res) => {
   const target = { serverId: String(serverId), name: String(name), scale: Number(scale) || 0 };
   const before = eggs.length;
   eggs = eggs.filter(e => !same(e, target));
+  if (before !== eggs.length) eggsVersion++;
 
   console.log(`[GONE] ${target.name} removed=${before - eggs.length} total=${eggs.length}`);
   res.json({ ok: true, removed: before - eggs.length, count: eggs.length });
@@ -149,14 +152,23 @@ app.get("/eggs", (req, res) => {
   res.json({ ok: true, count: eggs.length, eggs });
 });
 
+// Cached for 2 seconds so many players polling every few seconds cost almost nothing.
+let publicCache = { version: -1, limit: 0, at: 0, body: "" };
+
 app.get("/public-eggs", (req, res) => {
   const requested = Number.parseInt(req.query.limit, 10);
-  const limit = Math.min(Math.max(requested || 100, 1), MAX_EGGS);
+  const limit = Math.max(requested || eggs.length, 1); // no limit unless the player asks for one
 
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.set("Pragma", "no-cache");
+  res.type("application/json");
 
-  res.json({
+  const now = Date.now();
+  if (publicCache.version === eggsVersion && publicCache.limit === limit && now - publicCache.at < 2000) {
+    return res.send(publicCache.body);
+  }
+
+  const body = JSON.stringify({
     ok: true,
     count: eggs.length,
     eggs: eggs.slice(0, limit).map(e => ({
@@ -174,10 +186,12 @@ app.get("/public-eggs", (req, res) => {
       updatedAt: e.updatedAt
     }))
   });
+
+  publicCache = { version: eggsVersion, limit, at: now, body };
+  res.send(body);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`CAT HUB API listening on port ${PORT}`);
 });
-         
-    
+                                                                  
